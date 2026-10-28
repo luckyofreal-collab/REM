@@ -1,0 +1,12 @@
+const $=s=>document.querySelector(s), days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+$('#dashboard').onclick=()=>chrome.runtime.openOptionsPage();
+$('#days').innerHTML=days.map((d,i)=>`<label><input type="checkbox" value="${i}">${d}</label>`).join('');
+function send(type,data={}){return new Promise(resolve=>chrome.runtime.sendMessage({type,...data},resolve));}
+function localInputTime(d=new Date(Date.now()+3600000)){d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)}
+$('#task-form').elements.due.value=localInputTime();
+$('#task-form').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget;const frequency=f.elements.frequency.value;await send('REM_SAVE_TASK',{task:{title:f.elements.title.value,notes:f.elements.notes.value,dueAt:new Date(f.elements.due.value).getTime(),priority:f.elements.priority.value,recurrence:{frequency,days:frequency==='weekdays'?[...$('#days').querySelectorAll(':checked')].map(x=>+x.value):[]}}});f.reset();f.elements.due.value=localInputTime();load();};
+function date(t){return new Date(t).toLocaleString([], {dateStyle:'medium',timeStyle:'short'})}
+function item(t){const start=t.status==='pending'?`<button data-act="start">Start Now</button>`:'';return `<div class="task"><div class="task-main"><div class="task-title">${esc(t.title)}</div><div class="meta">${date(t.dueAt)} · ${t.priority} · ${t.status}</div></div><div class="task-actions">${start}<button class="secondary" data-act="ack">Ack</button><button class="secondary" data-act="snooze">Snooze</button><button class="secondary" data-act="complete">Done</button></div><input type="hidden" value="${t.id}"></div>`}
+function esc(x){return String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+async function load(){const s=await send('REM_GET');$('#tasks').innerHTML=s.tasks.filter(t=>!['completed','cancelled'].includes(t.status)).sort((a,b)=>a.dueAt-b.dueAt).slice(0,8).map(item).join('')||'<div class="empty">No tasks yet. Your list can stay small.</div>';}
+$('#tasks').onclick=async e=>{const act=e.target.dataset.act;if(!act)return;const id=e.target.closest('.task').querySelector('input').value;if(act==='snooze'){const m=prompt('Snooze for how many minutes? Choose 5, 15, 30, or enter a number.','15');if(!m)return;await send('REM_ACTION',{taskId:id,action:'snooze',minutes:+m});}else await send('REM_ACTION',{taskId:id,action:act});load();};load();
